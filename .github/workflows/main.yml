@@ -1,9 +1,9 @@
 name: Task Execution Pipeline
 
 on:
+  repository_dispatch:
+    types: [run-task]
   workflow_dispatch:
-  schedule:
-    - cron: '0 * * * *'
 
 concurrency:
   group: execution-pool-${{ github.workflow }}-${{ github.ref }}
